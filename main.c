@@ -26,7 +26,7 @@ typedef struct _options_t {
     int verbose;
     int blocksize;
     int mode;
-    char *file;
+    char **files;
     int bank;
     int space;
 } options_t;
@@ -36,7 +36,7 @@ options_t opts = {
     .verbose            = 0,
     .blocksize          = 0,
     .mode               = 0,
-    .file               = NULL,
+    .files               = NULL,
     .bank               = 0,
     .space              = 0,
 };
@@ -186,6 +186,13 @@ void get_options(int argc, char **argv) {
     if (opts.mode == 0)
         goto mode_error;
 
+    // parse filenames
+    opts.files = calloc(argc - optind, sizeof(char));
+    for (int i = optind; i < argc; ++i) {
+        opts.files[i - optind] = argv[i];
+        printf("filename: %s\n", opts.files[i - optind] );
+    }
+
     if (opts.mode == MODE_WRITE || opts.mode == MODE_READ) {
         // user didn't give a filename
         if (optind >= argc) {
@@ -194,12 +201,12 @@ void get_options(int argc, char **argv) {
         }
 
         // extra argument: ROM file
-        opts.file = argv[optind];
-
+        opts.files[0] = argv[optind];
         // set a default blocksize if the user hasn't given one
         if (opts.blocksize == 0)
             opts.blocksize = opts.mode == MODE_READ ? BLOCKSIZE_READ : BLOCKSIZE_WRITE;
     }
+
 
     return;
 
@@ -243,15 +250,15 @@ int main(int argc, char **argv) {
 
     // determine what we're reading/writing from/to
     int space = opts.space;
-    if (space == 0 && opts.file != NULL) {
+    if (space == 0 && opts.files[0] != NULL) {
         //attempt to autodetect the file
         //are the last four characters .sav ?
-        size_t namelen = strlen(opts.file);
+        size_t namelen = strlen(opts.files[0]);
 
-        if (opts.file[namelen - 4] == '.' &&
-            tolower(opts.file[namelen - 3]) == 's' &&
-            tolower(opts.file[namelen - 2]) == 'a' &&
-            tolower(opts.file[namelen - 1]) == 'v') {
+        if (opts.files[0][namelen - 4] == '.' &&
+            tolower(opts.files[0][namelen - 3]) == 's' &&
+            tolower(opts.files[0][namelen - 2]) == 'a' &&
+            tolower(opts.files[0][namelen - 1]) == 'v') {
             space = FROM_SRAM;
         } else {
             space = FROM_ROM;
@@ -260,14 +267,14 @@ int main(int argc, char **argv) {
 
     // read the ROM and save it into the file
     if (opts.mode == MODE_READ) {
-        FILE *save_file = fopen(opts.file, "w");
+        FILE *save_file = fopen(opts.files[0], "w");
         if (save_file == NULL)
-            err(1, "Can't open %s for writing", opts.file);
+            err(1, "Can't open %s for writing", opts.files[0]);
 
         if (opts.verbose && space == FROM_ROM)
-            printf("Saving ROM into %s\n", opts.file);
+            printf("Saving ROM into %s\n", opts.files[0]);
         else if (opts.verbose)
-            printf("Saving SAVE into %s\n", opts.file);
+            printf("Saving SAVE into %s\n", opts.files[0]);
 
         while ((offset + blocksize) <= limits[space]) {
             r = ems_read(space, offset + base, buf, blocksize);
@@ -286,23 +293,23 @@ int main(int argc, char **argv) {
         fclose(save_file);
 
         if (opts.verbose)
-            printf("Successfully wrote %u bytes into %s\n", offset, opts.file);
+            printf("Successfully wrote %u bytes into %s\n", offset, opts.files[0]);
     }
 
     // write ROM in the file to bank 1
     else if (opts.mode == MODE_WRITE) {
-        FILE *write_file = fopen(opts.file, "r");
+        FILE *write_file = fopen(opts.files[0], "r");
         if (write_file == NULL) {
             if (space == TO_ROM)
-                err(1, "Can't open ROM file %s", opts.file);
+                err(1, "Can't open ROM file %s", opts.files[0]);
             else
-                err(1, "Can't open SAVE file %s", opts.file);
+                err(1, "Can't open SAVE file %s", opts.files[0]);
         }
 
         if (opts.verbose && space == TO_ROM)
-            printf("Writing ROM file %s\n", opts.file);
+            printf("Writing ROM file %s\n", opts.files[0]);
         else if (opts.verbose)
-            printf("Writing SAVE file %s\n", opts.file);
+            printf("Writing SAVE file %s\n", opts.files[0]);
 
         while ((offset + blocksize) <= limits[space] && fread(buf, blocksize, 1, write_file) == 1) {
             r = ems_write(space, offset + base, buf, blocksize);
@@ -317,7 +324,7 @@ int main(int argc, char **argv) {
         fclose(write_file);
 
         if (opts.verbose)
-            printf("Successfully wrote %u from %s\n", offset, opts.file);
+            printf("Successfully wrote %u from %s\n", offset, opts.files[0]);
     }
 
     // read the ROM header
